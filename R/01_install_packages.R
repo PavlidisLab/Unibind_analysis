@@ -8,11 +8,7 @@ packages <- c(
   "parallel",
   "pheatmap",
   "cowplot",
-  "RColorBrewer",
-  "preprocessCore",
-  "GenomicRanges",
-  "limma",
-  "edgeR"
+  "RColorBrewer"
 )
 
 
@@ -27,4 +23,9 @@ if (!require("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
 
+
 BiocManager::install("biomaRt")
+BiocManager::install("preprocessCore")
+BiocManager::install("GenomicRanges")
+BiocManager::install("limma")
+BiocManager::install("edgeR")
