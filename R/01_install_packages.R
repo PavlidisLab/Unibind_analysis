@@ -8,7 +8,8 @@ packages <- c(
   "parallel",
   "pheatmap",
   "cowplot",
-  "RColorBrewer"
+  "RColorBrewer",
+  "credentials"
 )
 
 
