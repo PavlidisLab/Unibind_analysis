@@ -1,4 +1,5 @@
 ## Functions used throughout analysis
+## TODO: clean and doc
 ## -----------------------------------------------------------------------------
 
 
@@ -38,20 +39,33 @@ unibind_to_gr <- function(peak, bl_gr) {
 
 
 
-load_and_score <- function(dir, input_df, bl_gr, pc_gr) {
+load_and_score <- function(dir, input_df, bl_gr, pc_gr, ncores = 1) {
   
-  scores <- lapply(1:nrow(input_df), function(x) {
+  scores <- mclapply(1:nrow(input_df), function(x) {
     
     path <- paste0(dir, "/", input_df$Symbol[x], "/", input_df$File[x])
     
     tryCatch({
+      
       peak_gr <- load_unibind(path) %>% unibind_to_gr(bl_gr)
-      bscore <- binding_scores(pc_gr, peak_gr, method = "Ouyang")
+      
+      
+      bscore <- binding_scores(pc_gr = pc_gr, 
+                               peak_gr = peak_gr, 
+                               method = "Ouyang", 
+                               ncore = ncores)
+      
       message(input_df$File[x], " complete ", Sys.time())
+      
       return(bscore)
+      
     }, error = function(e) NULL)
     
-  })
+    
+    
+  }, mc.cores = ncores)
+  
+  return(scores)
 }
 
 
