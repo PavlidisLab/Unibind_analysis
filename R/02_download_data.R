@@ -1,6 +1,7 @@
 ## Download Unibind data, ...
 ## TODO: port over pcoding/ccre/etc table calls from TR agg OR make package
 ## TODO: robust/permissive def
+## TODO: look at compressed https://unibind.uio.no/static/data/20220914/bulk_Robust/Homo_sapiens/hg38_compressed_TFBSs.bed.gz
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)
@@ -22,8 +23,6 @@ perm_link_hg <- "https://unibind.uio.no/static/data/20220914/bulk_Permissive/Hom
 perm_link_mm <- "https://unibind.uio.no/static/data/20220914/bulk_Permissive/Mus_musculus/damo_mm10_TFBS_per_TF.tar.gz"
 
 
-# TODO: look at compressed
-# https://unibind.uio.no/static/data/20220914/bulk_Robust/Homo_sapiens/hg38_compressed_TFBSs.bed.gz
 
 
 input_df <- data.frame(
@@ -33,9 +32,12 @@ input_df <- data.frame(
 )
 
 
+input_df$path <- paste0(input_df$path, ".tar.gz")
+
+
 # NOTE: The untar creates a dir with another dir one level down with identical 
-# name, which then contains the individual TF dirs. ended up just manually moving
-# these dirs a level up. 
+# name, which then contains the individual TF dirs. I ended up just manually 
+# moving these dirs a level up. 
 
 
 for (i in 1:nrow(input_df)) {
