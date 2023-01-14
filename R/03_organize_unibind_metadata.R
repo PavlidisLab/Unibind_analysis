@@ -1,29 +1,30 @@
-## Export a tsv of basic unibind metadata, adding count of regions per experiment
-## and creating a version that collapses samples duplicated over different motifs
+## Export a tsv of basic Unibind metadata, adding count of regions per experiment
+## and creating a version that collapses samples duplicated over different motifs.
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)
 library(parallel)
-source("/home/amorin/regnetR/R/utils/bscore_unibind_functions.R")
+source("R/Utils/functions.R")
+source("R/00_config.R")
 
-# Note that permissive collection (lax motif filterin) contains all robust
-path_hg <- "/home/amorin/Data/Peak_files/Unibind/Hg38/Permissive/damo_hg38_TFBS_per_TF/"
-path_rob_hg <- "/home/amorin/Data/Peak_files/Unibind/Hg38/Robust/damo_hg38_TFBS_per_TF/"
-path_mm <- "/home/amorin/Data/Peak_files/Unibind/Mm10/Permissive/damo_mm10_TFBS_per_TF/"
-path_rob_mm <- "/home/amorin/Data/Peak_files/Unibind/Mm10/Robust/damo_mm10_TFBS_per_TF/"
+# TODO: reconsider pathing
+outfile <- "~/scratch/R_objects/Unibind_metadata.RDS"
 
-
-# Init metadata df from files for each TF. Assumes main dir only contains only
-# subdirs named with TF.
+  
+# Init metadata df from files for each TF. Assumes that path points to a main 
+# dir which contains only subdirs named with each TF. Note that the permissive
+# collection is a superset of the robust collection - the individual experiments
+# common to each are identical.
+# ------------------------------------------------------------------------------
 
 
 meta_df <- function(path) {
   
   tfs <- list.files(path)
   
-  files <- lapply(tfs, function(x) {
-    list.files(paste0(path, x))
-  })
+  stopifnot(length(tfs) > 0)
+  
+  files <- lapply(tfs, function(x) list.files(file.path(path, x)))
   names(files) <- tfs
   
   df <- data.frame(
@@ -31,30 +32,49 @@ meta_df <- function(path) {
     File = unlist(files))
   
   df$ID <- str_replace(df$File, "\\.MA.*", "")
-  
+  df$ID <- str_replace_all(df$ID, "\\.", "_")
+
   return(df)
 }
 
 
-df_hg <- meta_df(path_hg)
-df_rob_hg <- meta_df(path_rob_hg)
-df_mm <- meta_df(path_rob_mm)
-df_rob_mm <- meta_df(path_mm)
+meta_l <- list(
+  Permissive_hg = meta_df(perm_path_hg),
+  Robust_hg = meta_df(rob_path_hg),
+  Permissive_mm = meta_df(perm_path_mm),
+  Robust_mm = meta_df(perm_path_mm)
+)
 
 
-stopifnot(all(df_rob_hg$File) %in% df_hg$File)
-stopifnot(all(df_rob_mm$File) %in% df_mm$File)
+stopifnot(all(meta_l$Robust_hg$File %in% meta_l$Permissive_hg$File))
+stopifnot(all(meta_l$Robust_mm$File %in% meta_l$Permissive_mm$File))
 
 
-# Load permissive files to get npeak, then join with robust. 
-# NOTE: This step is redundant with the following scoring steps, since they also
-# load the data. For time being wanted to separate meta construction and scoring 
-# (Also really should just use a wc -l > output.tsv command...)
+# Some TF/experiments have "duplicated" samples where the same experiment is
+# scored using different motifs. Identify all such cases.
+# ------------------------------------------------------------------------------
 
 
-count_regions <- function(dir, input_df) {
+is_dup <- function(df) {
+  df$Duplicate <- df$ID %in% df$ID[duplicated(df$ID)]
+  return(df)
+}
+
+
+meta_l <- lapply(meta_l, is_dup)
+
+
+# Load permissive files to get count of peaks for each experiment, then join 
+# with robust (as the matched experiments are identical). 
+# Note that this step is redundant with the following scoring steps, since they 
+# also load the data. For time being wanted to separate meta construction and 
+# scoring. (Also really should just use a wc -l > output.tsv command...)
+# ------------------------------------------------------------------------------
+
+
+count_regions <- function(dir, input_df, ncores = 1) {
   
-  counts <- lapply(1:nrow(input_df), function(x) {
+  counts <- mclapply(1:nrow(input_df), function(x) {
     
     path <- paste0(dir, "/", input_df$Symbol[x], "/", input_df$File[x])
     
@@ -64,41 +84,53 @@ count_regions <- function(dir, input_df) {
       return(n)
     }, error = function(e) NULL)
     
-  })
+  }, mc.cores = ncores)
   
+  return(counts)
 }
 
 
-df_hg$N <- unlist(count_regions(path_hg, df_hg))
-df_mm$N <- unlist(count_regions(path_mm, df_mm))
 
-df_rob_hg <- left_join(df_rob_hg, df_hg[, c("File", "N")], by = "File")
-df_rob_mm <- left_join(df_rob_mm, df_mm[, c("File", "N")], by = "File")
+meta_l$Permissive_hg$N_peaks <-
+  unlist(count_regions(perm_path_hg, meta_l$Permissive_hg))
 
-
-write.table(df_hg,
-            quote = FALSE,
-            sep = "\t",
-            row.names = FALSE,
-            file = "~/Data/Metadata/Chipseq/unibind_human.tsv")
+meta_l$Permissive_mm$N_peaks <-
+  unlist(count_regions(perm_path_mm, meta_l$Permissive_mm))
 
 
-write.table(df_rob_hg,
-            quote = FALSE,
-            sep = "\t",
-            row.names = FALSE,
-            file = "~/Data/Metadata/Chipseq/unibind_robust_human.tsv")
+meta_l$Robust_hg <- left_join(meta_l$Robust_hg,
+                              meta_l$Permissive_hg[, c("File", "N_peaks")],
+                              by = "File")
+
+meta_l$Robust_mm <- left_join(meta_l$Robust_mm,
+                              meta_l$Permissive_mm[, c("File", "N_peaks")],
+                              by = "File")
 
 
-write.table(df_mm,
-            quote = FALSE,
-            sep = "\t",
-            row.names = FALSE,
-            file = "~/Data/Metadata/Chipseq/unibind_mouse.tsv")
+# Tallying TFs and seeing which are depleted in the robust set. In human, 59 TFs
+# have data only in the permissive set. In mouse all TFs have at least one 
+# experiment in both sets.
+# ------------------------------------------------------------------------------
 
 
-write.table(df_rob_mm,
-            quote = FALSE,
-            sep = "\t",
-            row.names = FALSE,
-            file = "~/Data/Metadata/Chipseq/unibind_robust_mouse.tsv")
+n_tf <- lapply(meta_l, function(x) arrange(count(x, Symbol), desc(n)))
+
+
+diff_hg <- left_join(n_tf$Permissive_hg, 
+                     n_tf$Robust_hg, 
+                     by = "Symbol",
+                     suffix = c("Permissive", "Robust"))
+
+diff_mm <- left_join(n_tf$Permissive_mm, 
+                     n_tf$Robust_mm, 
+                     by = "Symbol",
+                     suffix = c("Permissive", "Robust"))
+
+perm_only_hg <- filter(diff_hg, is.na(nRobust))
+perm_only_mm <- filter(diff_mm, is.na(nRobust))
+
+
+# Save out
+# ------------------------------------------------------------------------------
+
+saveRDS(meta_l, outfile)
