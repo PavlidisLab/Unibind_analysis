@@ -42,7 +42,7 @@ meta_l <- list(
   Permissive_hg = meta_df(perm_path_hg),
   Robust_hg = meta_df(rob_path_hg),
   Permissive_mm = meta_df(perm_path_mm),
-  Robust_mm = meta_df(perm_path_mm)
+  Robust_mm = meta_df(rob_path_mm)
 )
 
 
