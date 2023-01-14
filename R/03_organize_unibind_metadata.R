@@ -7,10 +7,7 @@ library(parallel)
 source("R/Utils/functions.R")
 source("R/00_config.R")
 
-# TODO: reconsider pathing
-outfile <- "~/scratch/R_objects/Unibind_metadata.RDS"
 
-  
 # Init metadata df from files for each TF. Assumes that path points to a main 
 # dir which contains only subdirs named with each TF. Note that the permissive
 # collection is a superset of the robust collection - the individual experiments
@@ -108,8 +105,8 @@ meta_l$Robust_mm <- left_join(meta_l$Robust_mm,
 
 
 # Tallying TFs and seeing which are depleted in the robust set. In human, 59 TFs
-# have data only in the permissive set. In mouse all TFs have at least one 
-# experiment in both sets.
+# have data only in the permissive set. In mouse 50 TFs have data only in
+# permissive set
 # ------------------------------------------------------------------------------
 
 
@@ -127,10 +124,11 @@ diff_mm <- left_join(n_tf$Permissive_mm,
                      suffix = c("Permissive", "Robust"))
 
 perm_only_hg <- filter(diff_hg, is.na(nRobust))
+
 perm_only_mm <- filter(diff_mm, is.na(nRobust))
 
 
 # Save out
 # ------------------------------------------------------------------------------
 
-saveRDS(meta_l, outfile)
+saveRDS(meta_l, meta_outfile)
