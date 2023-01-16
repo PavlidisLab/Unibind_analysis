@@ -24,6 +24,9 @@ dhs_hg <- read.delim("~/Data/Chromosome_info/ENCODE_human_DHS.tsv", stringsAsFac
 dhs_hg <- mutate(dhs_hg, seqname = str_replace(seqname, "chr", ""))
 dhs_hg <- makeGRangesFromDataFrame(dhs_hg, keep.extra.columns = TRUE)
 
+# TODO: keep?
+dist_mat_out <- "~/scratch/R_objects/unibind_dist_to_nearest_mats.RDS" 
+
 
 # Use GR to generate a gene x experiment matrix where elements are the distance
 # in bp between the gene TSS and the nearest peak in the given experiment. This
@@ -48,11 +51,59 @@ nearest_dist_mat <- function(pc, gr_l, ncores = cores) {
 }
 
 
-# dist_hg <- nearest_dist_mat(pc = pc_hg, gr_l = gr_hg)
-# dist_mm <- nearest_dist_mat(pc = pc_mm, gr_l = gr_mm)
-# 
-# saveRDS(list(Human = dist_hg, Mouse = dist_mm),
-#         "~/scratch/R_objects/unibind_dist_to_nearest_mats.RDS")
+nearest_dist_summary <- function(mat) {
+  df <- data.frame(t(apply(mat, 1, summary)))
+  return(df)
+}
+
+
+if (!file.exists(dist_mat_out)) {
+  dist_hg <- nearest_dist_mat(pc = pc_hg, gr_l = gr_hg)
+  dist_mm <- nearest_dist_mat(pc = pc_mm, gr_l = gr_mm)
+  saveRDS(list(Human = dist_hg, Mouse = dist_mm), dist_mat_out)
+} else {
+  temp <- readRDS(dist_mat_out)
+  dist_hg <- temp$Human
+  dist_mm <- temp$Mouse
+  rm(temp)
+}
+
+
+dist_summ_hg <- nearest_dist_summary(dist_hg)
+dist_summ_mm <- nearest_dist_summary(dist_mm)
+
+
+# Use ENCODE DHS index (human only) to count open chromatin sites around genes
+# ------------------------------------------------------------------------------
+
+
+# the window in bp +/- from the TSS to consider overlaps with DHSs 
+dhs_gap <- 1e5
+
+pc_dhs_count <- data.frame(
+  Symbol = pc_hg$Symbol,
+  Count = countOverlaps(pc_hg, dhs_hg, maxgap = dhs_gap)
+)
+
+pc_dhs_count %>% head
+summary(pc_dhs_count$Count)
+hist(pc_dhs_count$Count, breaks = 100)
+
+
+# Proportion of peaks in each human experiment that overlap a DHS
+
+dhs_overlap <- function(gr_l, dhs) {
+  
+  lapply(gr_l, function(x) {
+    n_peaks <- length(x)
+    ol <- findOverlaps(x, dhs_hg)
+    n_distinct(ol@from) / n_peaks
+  })
+}
+
+
+
+
 
 
 # Generate average binding scores across experiments: 1) Across all experiments;
@@ -115,8 +166,16 @@ filter_top <- function(mean_df, qtl = 0.99) {
 }
 
 
-topbound_hg <- filter_top(mean_l$Human_mom)
 
+# Human
+top_bound_hg <- filter_top(mean_l$Human_mom)
+top_dist_hg <- dist_hg[top_bound_hg$Symbol, ]
+top_summ_hg <- dist_summ_hg[top_bound_hg$Symbol, ]
+
+# Mouse
+top_bound_mm <- filter_top(mean_l$Mouse_mom)
+top_dist_mm <- dist_mm[top_bound_mm$Symbol, ]
+top_summ_mm <- dist_summ_mm[top_bound_mm$Symbol, ]
 
 
 
@@ -124,17 +183,44 @@ topbound_hg <- filter_top(mean_l$Human_mom)
 # ------------------------------------------------------------------------------
 
 
+filter_bottom <- function(mean_df, qtl = 0.01) {
+  filter(mean_df, Mean <= quantile(Mean, qtl)) %>% arrange(Mean)
+}
+
+
+# TODO: finalize mat for infreq calc
 mat_raw <- bind_hg$Mat_raw
 mat_qnl <- bind_hg$Mat_QNL
-
 mean_raw <- get_all_mean(get_tf_mean(mat_raw, bind_hg$Meta))
 mean_qnl <- get_all_mean(get_tf_mean(mat_qnl, bind_hg$Meta))
+# plot(mean_raw$Mean, mean_qnl$Mean)
+# cor(mean_raw$Mean, mean_qnl$Mean)
 
-mean_raw %>% head
-mean_qnl %>% head
+btm_bound_hg1 <- filter_bottom(mean_raw)
+btm_bound_hg2 <- filter_bottom(mean_qnl)
+length(intersect(btm_bound_hg1$Symbol, btm_bound_hg2$Symbol))
 
-plot(mean_raw$Mean, mean_qnl$Mean)
-cor(mean_raw$Mean, mean_qnl$Mean)
+
+dist_summ_hg[btm_bound_hg1$Symbol, ]
+
+
+# Example of infreq bound gene that still has a proximal peak
+dist_summ_hg["CT45A6", ]
+summary(mat_raw["CT45A6", ])
+head(sort(mat_raw["CT45A6", ], decreasing = TRUE))
+summary(mat_qnl["CT45A6", ])
+head(sort(mat_qnl["CT45A6", ], decreasing = TRUE))
+
+
+# Example of infreq bound for DHS
+
+pc_dhs_count2 <- mutate(pc_dhs_count,
+                        Raw = Symbol %in% btm_bound_hg1$Symbol,
+                        QNL = Symbol %in% btm_bound_hg2$Symbol)
+
+pc_dhs_count2 %>% head
+boxplot(pc_dhs_count2$Count ~ pc_dhs_count2$Raw)
+boxplot(pc_dhs_count2$Count ~ pc_dhs_count2$QNL)
 
 
 # Plots
