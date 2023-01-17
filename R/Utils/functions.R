@@ -18,6 +18,8 @@ load_unibind <- function(path) {
     col.names = c("Chromosome", "Start", "End", "Motif", "Score", "Strand"),
     sep = "\t"
   )
+  
+  return(peak)
 }
 
 
@@ -39,6 +41,9 @@ unibind_to_gr <- function(peak, bl_gr) {
 
 
 
+# TODO: internal bind_score() call also uses parallel, need to test if quicker
+# to parallel the outer mclapply call or the binding_scores() call.
+
 load_and_score <- function(dir, input_df, bl_gr, pc_gr, ncores = 1) {
   
   scores <- mclapply(1:nrow(input_df), function(x) {
@@ -53,7 +58,7 @@ load_and_score <- function(dir, input_df, bl_gr, pc_gr, ncores = 1) {
       bscore <- binding_scores(pc_gr = pc_gr, 
                                peak_gr = peak_gr, 
                                method = "Ouyang", 
-                               ncore = ncores)
+                               ncore = 1)
       
       message(input_df$File[x], " complete ", Sys.time())
       
@@ -70,11 +75,11 @@ load_and_score <- function(dir, input_df, bl_gr, pc_gr, ncores = 1) {
 
 
 
+# Assumes m x n mat with named rows and columns. Returns a dataframe of all
+# the row-col elements - if symmetric is TRUE, then only keep unique pairs
+# https://stackoverflow.com/questions/28035001/
+
 mat_to_df <- function(mat, symmetric = TRUE) {
-  
-  # Assumes m x n mat with named rows and columns. Returns a dataframe of all
-  # the row-col elements - if symmetric is TRUE, then only keep unique pairs
-  # https://stackoverflow.com/questions/28035001/
   
   if (symmetric) {
     df <- data.frame(
