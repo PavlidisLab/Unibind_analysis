@@ -11,6 +11,13 @@ bind_mm <- readRDS("~/scratch/R_objects/unibind_bindscore_mouse.RDS")
 # bind_l <- list(Human = bind_hg$Mat_QNL, Mouse = bind_mm$Mat_QNL)
 bind_l <- list(Human = bind_hg$Mat_raw, Mouse = bind_mm$Mat_raw)
 
+
+meta_l <- readRDS(meta_outfile)
+meta_hg <- meta_l$Permissive_hg
+meta_mm <- meta_l$Permissive_mm
+# meta_hg <- bind_hg$Meta
+# meta_mm <- bind_mm$Meta
+
 # Load protein coding genes and convert to GRanges
 pc_hg <- pc_to_gr(read.delim(ref_hg, stringsAsFactors = FALSE))
 pc_mm <- pc_to_gr(read.delim(ref_mm, stringsAsFactors = FALSE))
@@ -26,6 +33,7 @@ dhs_hg <- makeGRangesFromDataFrame(dhs_hg, keep.extra.columns = TRUE)
 
 # TODO: keep?
 dist_mat_out <- "~/scratch/R_objects/unibind_dist_to_nearest_mats.RDS" 
+dhs_ol_out <- "~/scratch/R_objects/unibind_dhs_proportion_overlap.RDS" 
 
 
 # Use GR to generate a gene x experiment matrix where elements are the distance
@@ -91,6 +99,8 @@ hist(pc_dhs_count$Count, breaks = 100)
 
 
 # Proportion of peaks in each human experiment that overlap a DHS
+# ------------------------------------------------------------------------------
+
 
 dhs_overlap <- function(gr_l, dhs) {
   
@@ -102,8 +112,38 @@ dhs_overlap <- function(gr_l, dhs) {
 }
 
 
+if (!file.exists(dhs_ol_out)) {
+  prop_ol <- dhs_overlap(gr_hg, dhs_hg)
+  saveRDS(prop_ol, dhs_ol_out)
+} else {
+  prop_ol <- readRDS(dhs_ol_out)
+}
 
 
+stopifnot(identical(names(prop_ol), meta_hg$File))
+
+
+prop_ol_df <- left_join(
+  meta_hg,
+  rownames_to_column(data.frame(Proportion = unlist(prop_ol)), var = "File"),
+  by = "File"
+)
+
+
+prop_summ <- prop_ol_df %>% 
+  group_by(Symbol) %>% 
+  dplyr::summarise(Mean = mean(Proportion), n = length(File))
+
+
+prop_summ
+
+plot(prop_summ$Mean, prop_summ$n)
+
+ggplot(prop_ol_df, aes(x = Symbol, y = Proportion)) +
+  geom_boxplot()
+
+
+summary(meta_hg$Proportion)
 
 
 # Generate average binding scores across experiments: 1) Across all experiments;
