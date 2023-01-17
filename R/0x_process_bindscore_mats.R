@@ -1,49 +1,32 @@
 ## Read in the raw bind score matrices, process them, and save out as a list.
 ## -----------------------------------------------------------------------------
 
-
 library(tidyverse)
 library(preprocessCore)
+library(parallel)
 source("R/00_config.R")
-# source("R/Utils/functions.R")
 
-
-# TODO: remove when regen
-bmat_path_hg <- "/space/scratch/amorin/R_objects/cp_unibind_all_scores_hg.RDS"
-bmat_path_mm <- "/space/scratch/amorin/R_objects/cp_unibind_all_scores_mm.RDS"
-
-# Unibind metadata
+# Load Unibind metadata and only consider experiments with a min count of peaks
 meta_l <- readRDS(meta_outfile)
+meta_l <- lapply(meta_l, filter, N_peaks >= min_peaks)
 
 # Loading of matrices of raw scores
 bmat_hg <- readRDS(bmat_path_hg) 
 bmat_mm <- readRDS(bmat_path_mm) 
 
-# TODO: remove when regen
-bmat_hg <- do.call(cbind, bmat_hg)
-bmat_mm <- do.call(cbind, bmat_mm)
-
-
-# Only considering experiments that have a minimum count of peaks
-meta_l <- lapply(meta_l, filter, N_peaks >= min_peaks)
-
 # All matrices to a list
 bmat_l <- list(
-  Permissive_hg = bmat_hg,
+  Permissive_hg = bmat_hg[, meta_l$Permissive_hg$File],
   Robust_hg = bmat_hg[, meta_l$Robust_hg$File],
-  Permissive_mm = bmat_mm,
+  Permissive_mm = bmat_mm[, meta_l$Permissive_mm$File],
   Robust_mm = bmat_mm[, meta_l$Robust_mm$File]
 )
 
 
 # Unibind includes "duplicated" experiments that have been scored with different
-# motifs. Calculate the correlation of binding scores between these experiments
+# motifs. Removing experiments under peak filter can also remove some (but not
+# all) experiments from duplicated sets. Split duplicated and non-dup meta.
 # ------------------------------------------------------------------------------
-
-
-# Hacky: removing experiments under peak filter can also remove some (but not
-# all) experiments from duplicated sets. Need to remove these cases before 
-# calculating cor between duplicated experiments.
 
 
 filter_dupl <- function(meta_df) {
@@ -51,6 +34,14 @@ filter_dupl <- function(meta_df) {
   n_id <- table(meta_df$ID)
   meta_df <- filter(meta_df, ID %in% names(n_id[n_id > 1]))
 }
+
+
+meta_dup_l <- lapply(meta_l, filter_dupl)
+meta_nodup_l <- lapply(meta_l, filter, !Duplicate)
+
+
+# Calculate the correlation of binding scores between dup experiments
+# ------------------------------------------------------------------------------
 
 
 # Return the unique correlations between duplicate bind scores as a df
@@ -90,11 +81,8 @@ cor_summary <- function(cor_df) {
 }
 
 
-# Keeping only duplicated experiment metadata
-meta_dup_l <- lapply(meta_l, filter_dupl)
-
-
 # List of data frames of the correlation between duplicates
+
 cor_l <- lapply(1:length(bmat_l), function(i) {
   get_cor(meta_dup_l[[i]], bmat_l[[i]])
 })
@@ -111,46 +99,107 @@ cor_max <- lapply(summ_l, filter, Median == max(Median))
 
 
 # Average duplicates in matrix and collapse info in metadata
+# ------------------------------------------------------------------------------
 
 
-dup_out <- bmat_hg[, !colnames(bmat_hg) %in% meta_dedup_hg$File]
+# Return a matrix where the duplicated experiments are averaged
 
-dup_avg <- lapply(unique(meta_dedup_hg$ID), function(x) {
-  cols <- filter(meta_dedup_hg, ID == x)
-  mat <- bmat_hg[, cols$File]
-  rowMeans(mat)
-})
-
-dup_avg <- do.call(cbind, dup_avg)
-
-meta_dedup_hg <- meta_dedup_hg %>% 
-  mutate(File = str_replace(File, "\\.MA.*", "\\.avg")) %>% 
-  distinct(File, .keep_all = TRUE)
-
-stopifnot(identical(nrow(meta_dedup_hg), ncol(dup_avg)))
-
-colnames(dup_avg) <- meta_dedup_hg$File
+avg_dup <- function(meta_df, bmat) {
+  
+  stopifnot(all(colnames(bmat) %in% meta_df$File))
+  
+  dup_avg <- lapply(unique(meta_df$ID), function(x) {
+    cols <- filter(meta_df, ID == x)
+    bmat <- bmat[, cols$File]
+    rowMeans(bmat)
+  })
+  
+  dup_avg <- do.call(cbind, dup_avg)
+  return(dup_avg)
+}
 
 
-# Combine average and dup out to get de-duplicated matrix and meta
+# Return a df where the duplicated experiment info has been collapsed
+
+dedup_meta <- function(meta_df) {
+  
+  meta_df <- meta_df %>% 
+    mutate(File = str_replace(File, "\\.MA.*", "\\.avg")) %>% 
+    distinct(File, .keep_all = TRUE)
+  
+  return(meta_df)
+}
 
 
-bmat_dedup_hg <- cbind(dup_out, dup_avg)
+# Return a list of the de-duplicated meta and matrix
 
-meta_final_hg <- filter(meta_hg, !(ID %in% meta_dedup_hg$ID)) %>% 
-  rbind(meta_dedup_hg) %>% 
-  arrange(Symbol)
+dedup_data <- function(dup_meta, nodup_meta, dup_mat, nodup_mat) {
+  
+  avg_dup_mat <- avg_dup(dup_meta, dup_mat)
+  avg_dup_meta <- dedup_meta(dup_meta)
+  colnames(avg_dup_mat) <- avg_dup_meta$File
+  final_meta <- rbind(nodup_meta, avg_dup_meta) %>% arrange(Symbol)
+  final_mat <- cbind(nodup_mat, avg_dup_mat)[, final_meta$File]
+  
+  return(list(Meta = final_meta, Mat_raw = final_mat))
+  
+}
 
 
-bmat_dedup_hg <- bmat_dedup_hg[, meta_final_hg$File]
+dedup_l <- mclapply(names(bmat_l), function(x) {
+  
+  dedup_data(dup_meta = meta_dup_l[[x]], 
+             nodup_meta = meta_nodup_l[[x]],
+             dup_mat = bmat_l[[x]][,  meta_dup_l[[x]]$File],
+             nodup_mat = bmat_l[[x]][, meta_nodup_l[[x]]$File])
+  
+}, mc.cores = 4)
+names(dedup_l) <- names(bmat_l)
+
 
 
 stopifnot(identical(
-  bmat_dedup_hg[, "EXP036852.renal_tubular_cells.ARNT.avg"],
+  dedup_l$Permissive_hg$Mat[, "EXP036852.renal_tubular_cells.ARNT.avg"],
   rowMeans(bmat_hg[, c("EXP036852.renal_tubular_cells.ARNT.MA0004.1.damo.bed",
                        "EXP036852.renal_tubular_cells.ARNT.MA0006.1.damo.bed",
                        "EXP036852.renal_tubular_cells.ARNT.MA0259.1.damo.bed")])
 ))
+
+
+# Log transform + quantile norm the raw binding scores
+# ------------------------------------------------------------------------------
+
+
+# Returns dat_l with an additional list element of the quantile norm(log2(mat+1))
+
+add_qnl <- function(dat_l) {
+  
+  dat_l <- lapply(dat_l, function(x) {
+    x$Mat_qnl <- normalize.quantiles(log2(x$Mat_raw + 1), keep.names = TRUE)
+    return(x)
+  })
+  
+  return(dat_l)
+}
+
+
+dedup_l <- add_qnl(dedup_l)
+
+
+test_cor <- cor(
+  dedup_l$Permissive_hg$Mat_raw[, 1],
+  dedup_l$Permissive_hg$Mat_qnl[, 1],
+  method = "spearman"
+)
+
+stopifnot(round(test_cor, 3) == 1)
+
+
+# Save out
+
+
+saveRDS(dedup_l, bind_dat_path)
+
 
 
 # Plots
