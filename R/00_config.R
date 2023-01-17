@@ -22,17 +22,19 @@ rob_path_mm <- paste0(dat_dir, "Peak_files/Unibind/Mm10/Robust/damo_mm10_TFBS_pe
 perm_path_hg <- paste0(dat_dir, "Peak_files/Unibind/Hg38/Permissive/damo_hg38_TFBS_per_TF")
 perm_path_mm <- paste0(dat_dir, "Peak_files/Unibind/Mm10/Permissive/damo_mm10_TFBS_per_TF")
 
+# Raw bindscore matrices
+bmat_path_hg <- "/space/scratch/amorin/R_objects/unibind_all_scores_hg.RDS"
+bmat_path_mm <- "/space/scratch/amorin/R_objects/unibind_all_scores_mm.RDS"
+
+# Processed list of meta and matrices
+bind_dat_path <- "/space/scratch/amorin/R_objects/processed_unibind_data.RSD"
+
 
 # TODO: formalize package or download functions
 ref_hg <- paste0(dat_dir, "Metadata/refseq_select_hg38.tsv")
 ref_mm <- paste0(dat_dir, "Metadata/refseq_select_mm10.tsv")
 bl_path_hg <-  paste0(dat_dir, "Chromosome_info/blacklist_hg38.tsv")
 bl_path_mm <- paste0(dat_dir, "Chromosome_info/blacklist_hg38.tsv")
-
-
-# Raw bindscore matrices
-bmat_path_hg <- "/space/scratch/amorin/R_objects/unibind_all_scores_hg.RDS"
-bmat_path_mm <- "/space/scratch/amorin/R_objects/unibind_all_scores_mm.RDS"
 
 
 # Path of UK biobank depletion ranks
