@@ -1,11 +1,28 @@
-##
-## TODO: unify meta between matrices and GR
+## This script generates ranked summaries of TR-target binding evidence
 ## -----------------------------------------------------------------------------
 
+library(tidyverse)
+source("R/00_config.R")
+source("R/Utils/functions.R")
+
+# Load de-duplicated data
+dat <- readRDS(bind_dat_path)
+
+# Isolating data to use (permissive or robust collection) 
+bind_l <- list(Human = dat$Permissive_hg$Mat_qnl, Mouse = dat$Permissive_mm$Mat_qnl)
+# bind_l <- list(Human = dat$Permissive_hg$Mat_raw, Mouse = dat$Permissive_mm$Mat_raw)
+
+# TODO: consolidate metas across GR/mats
+# meta_l <- list(Human = dat$Permissive_hg$Meta, Mouse = dat$Permissive_mm$Meta)
+meta_l <- readRDS(meta_outfile)
+meta_hg <- meta_l$Permissive_hg
+meta_mm <- meta_l$Permissive_mm
+
+# Load protein coding genes and convert to GRanges
+pc_hg <- pc_to_gr(read.delim(ref_hg, stringsAsFactors = FALSE))
+pc_mm <- pc_to_gr(read.delim(ref_mm, stringsAsFactors = FALSE))
 
         
-
-
 # Generate average binding scores across experiments: 1) Across all experiments;
 # 2) Grouped by TF; 3) Mean of means across TFs, to summarize across all 
 # experiments but to reduce effect of imbalanced TF counts.
@@ -198,3 +215,133 @@ plot_hist <- function(mean_df, species, qtl_upper = 0.99) {
 
 p1a <- plot_hist(mean_l$Human_mom, "Human")
 p1b <- plot_hist(mean_l$Mouse_mom, "Mouse")
+
+
+
+##
+
+# limma voom for in vs out
+
+
+# prepare data matrices - min count filter on raw/no-norm score matrix (will be 
+# QN+log in voom). for now currently just from examining distn of row/gene sums
+
+sum_hg <- rowSums(bmat_dedup_hg)
+hist(sum_hg, breaks = 100)
+min_hg <- 50
+abline(v = min_hg, col = "red")
+
+# Subset matrix to only minimum raw counts across experiments
+keep_hg <- sum_hg > min_hg
+mat_hg <- bmat_dedup_hg[keep_hg, meta_final_hg$File]
+
+
+# Design matrices, voom, limma model
+# means model (~0) so each TF has a coef corresponding to group mean with no intercept
+#-------------------------------------------------------------------------------
+
+
+design_hg <- model.matrix(
+  ~ 0 + Symbol + log10(N), 
+  data = meta_final_hg)
+
+rownames(design_hg) <- meta_final_hg$File
+colnames(design_hg) <- str_replace(colnames(design_hg), "Symbol", "")
+
+voom_hg <- voom(mat_hg, 
+                design = design_hg, 
+                normalize.method = "quantile")
+
+fit_hg <- lmFit(voom_hg, design = design_hg)
+
+
+
+# interested in each TR vs the rest, so must iteratively construct the 
+# appropriate contrast vector. (Law et al., 2020) used as reference
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7873980/ 
+#-------------------------------------------------------------------------------
+
+
+contr_list <- function(meta, contr_vec) {
+  # Make a contrast vector for each TF vs the rest: 1 for TF of interest, 
+  # -(1/(#TF - 1)) for the rest, leaving nuisance variables as 0
+  
+  tfs <- unique(meta$Symbol)
+  
+  clist <- lapply(tfs, function(x) {
+    contr_vec[x] <- 1
+    contr_vec[names(contr_vec) %in% setdiff(tfs, x)] <- -(1/(length(tfs)-1))
+    return(contr_vec)
+  })
+  names(clist) <- tfs
+  return(clist)
+}
+
+
+contr_hg <- rep(0, length(colnames(coef(fit_hg))))
+names(contr_hg) <- colnames(coef(fit_hg))
+
+clist_hg <- contr_list(meta_final_hg, contr_hg)
+
+
+# For each symbol, get the top results for the symbol vs all contrast
+#-------------------------------------------------------------------------------
+
+
+top_fit <- function(contr_list, fit) {
+  # Apply eBayes + contrast fit to the model and extract toptable for each contr
+  lapply(contr_list, function(x) {
+    contr_fit <- eBayes(contrasts.fit(fit, x))
+    topTable(contr_fit, n = Inf)
+  })
+}
+
+
+top_hg <- top_fit(clist_hg, fit_hg) 
+
+
+
+saveRDS(
+  list(
+    Mat_raw = bmat_dedup_hg,
+    Mat_QNL = qmat_hg,
+    Meta = meta_final_hg,
+    All_mean = all_mean,
+    Group_mean = group_mean,
+    Fit = top_hg
+  ),
+  file = "~/scratch/R_objects/unibind_bindscore_human.RDS"
+)
+
+
+
+
+
+# count of pos FC sig genes at FDR05
+n_hg <- sapply(top_hg, function(x) nrow(filter(x, logFC > 0 & adj.P.Val < 0.05)))
+
+n_df <- data.frame(Count_diff = n_hg) %>% 
+  rownames_to_column(var = "Symbol") %>% 
+  left_join(count(meta_final_hg, Symbol), by = "Symbol")
+
+ggplot(n_df, aes(x =  reorder(Symbol, Count_diff), y = Count_diff)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 25),
+        axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 5, angle = 90, vjust = 0.5, hjust=1))
+
+
+# head(top_hg$RUNX1)
+# view(top_hg$RUNX1)
+
+# tf <- "RUNX1"
+# gene <- "GTF2A2"
+
+# boxplot(qmat_hg[gene, ] ~ meta_final_hg$Symbol == tf)
+# boxplot(voom_hg$E[gene, ] ~ meta_final_hg$Symbol == tf)
+# 
+# plot(density(qmat_hg[gene, meta_final_hg$Symbol == tf]), col = "red")
+# lines(density(qmat_hg[gene, meta_final_hg$Symbol != tf]), col = "black")
+
