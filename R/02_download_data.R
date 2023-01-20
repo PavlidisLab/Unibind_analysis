@@ -2,6 +2,7 @@
 ## TODO: port over pcoding/ccre/etc table calls from TR agg OR make package
 ## TODO: robust/permissive def
 ## TODO: look at compressed https://unibind.uio.no/static/data/20220914/bulk_Robust/Homo_sapiens/hg38_compressed_TFBSs.bed.gz
+## TODO: download DHS
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)
