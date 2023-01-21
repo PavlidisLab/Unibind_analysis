@@ -209,3 +209,33 @@ ggplot(prop_ol_df, aes(x = reorder(Symbol, Proportion, FUN = median), y = Propor
         axis.title.x = element_blank(),
         axis.title = element_text(size = 20),
         axis.text = element_text(size = 20))
+
+
+
+# Relationship between count of DHSs around genes and mean binding
+
+
+dhs_mean_df <- left_join(mean_l$Human_mom, pc_dhs_count, by = "Symbol")
+
+ggplot(dhs_mean_df, aes(x = Count, y = Mean)) +
+  geom_point(alpha = 0.4, colour = "royalblue") +
+  xlab("Count of DHS elements around TSS") +
+  ylab("Mean binding score") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        plot.margin = margin(10, 20, 10, 10))
+
+cor(dhs_mean_df$Mean, dhs_mean_df$Count, method = "spearman")
+
+
+# Binding but no DHS
+
+dhs_mean_df %>% 
+  filter(Count == 0) %>% 
+  arrange(desc(Mean)) %>% 
+  head(20)
+
+pc_dhs_count_top <- mutate(pc_dhs_count, Top = Symbol %in% top_bound_hg$Symbol)
+boxplot(pc_dhs_count_top$Count ~ pc_dhs_count_top$Top)
+wilcox.test(pc_dhs_count_top$Count ~ pc_dhs_count_top$Top)
