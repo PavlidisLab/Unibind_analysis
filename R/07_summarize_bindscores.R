@@ -2,6 +2,8 @@
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)
+library(limma)
+library(edgeR)
 source("R/00_config.R")
 source("R/Utils/functions.R")
 
@@ -85,43 +87,9 @@ filter_top <- function(mean_df, qtl = 0.99) {
 
 # Human
 top_bound_hg <- filter_top(mean_l$Human_mom)
-top_dist_hg <- dist_hg[top_bound_hg$Symbol, ]
-top_summ_hg <- dist_summ_hg[top_bound_hg$Symbol, ]
 
 # Mouse
 top_bound_mm <- filter_top(mean_l$Mouse_mom)
-top_dist_mm <- dist_mm[top_bound_mm$Symbol, ]
-top_summ_mm <- dist_summ_mm[top_bound_mm$Symbol, ]
-
-
-# Relationship between count of DHSs around genes and mean binding
-
-
-tt <- left_join(mean_l$Human_mom, pc_dhs_count, by = "Symbol")
-
-ggplot(tt, aes(x = Count, y = Mean)) +
-  geom_point(alpha = 0.4, colour = "royalblue") +
-  xlab("Count of DHS elements around TSS") +
-  ylab("Mean binding score") +
-  theme_classic() +
-  theme(axis.text = element_text(size = 20),
-        axis.title = element_text(size = 20),
-        plot.margin = margin(10, 20, 10, 10))
-
-cor(tt$Mean, tt$Count, method = "spearman")
-
-
-# Binding but no DHS
-
-tt %>% 
-  filter(Count == 0) %>% 
-  arrange(desc(Mean)) %>% 
-  head(20)
-
-pc_dhs_count_top <- mutate(pc_dhs_count, Top = Symbol %in% top_bound_hg$Symbol)
-boxplot(pc_dhs_count_top$Count ~ pc_dhs_count_top$Top)
-wilcox.test(pc_dhs_count_top$Count ~ pc_dhs_count_top$Top)
-
 
 
 # Rarely/never bound genes
@@ -133,52 +101,162 @@ filter_bottom <- function(mean_df, qtl = 0.01) {
 }
 
 
-# TODO: finalize mat for infreq calc
-mat_raw <- dat$Permissive_hg$Mat_raw
-mat_qnl <- dat$Permissive_hg$Mat_qnl
-mean_raw <- get_all_mean(get_tf_mean(mat_raw, dat$Permissive_hg$Meta))
-mean_qnl <- get_all_mean(get_tf_mean(mat_qnl, dat$Permissive_hg$Meta))
-# plot(mean_raw$Mean, mean_qnl$Mean)
-# cor(mean_raw$Mean, mean_qnl$Mean)
+# Human
+top_bound_hg <- filter_bottom(mean_l$Human_mom)
 
-btm_bound_hg1 <- filter_bottom(mean_raw)
-btm_bound_hg2 <- filter_bottom(mean_qnl)
-length(intersect(btm_bound_hg1$Symbol, btm_bound_hg2$Symbol))
+# Mouse
+top_bound_mm <- filter_bottom(mean_l$Mouse_mom)
 
 
-dist_summ_hg[btm_bound_hg1$Symbol, ]
+# Binding specificity model: Use limma voom framework to get the expected
+# binding score of a TR-gene interaction, using a "one-versus rest" contrast
+# to compare a group of TR experiments against all others, controlling for the
+# count of peak for the experiment.
+# --
+# First prepare raw bind score matrices for limma voom, as it performs quantile
+# norm and log. Examining hist to filter genes by raw counts across experiments.
+# Mouse more zero-bound genes compared to human (likely due to bad annotations).
+# ------------------------------------------------------------------------------
 
 
-# Example of infreq bound gene that still has a proximal peak
-dist_summ_hg["CT45A6", ]
-summary(mat_raw["CT45A6", ])
-head(sort(mat_raw["CT45A6", ], decreasing = TRUE))
-summary(mat_qnl["CT45A6", ])
-head(sort(mat_qnl["CT45A6", ], decreasing = TRUE))
+# Human
+
+sum_hg <- rowSums(dat$Permissive_hg$Mat_raw)
+hist(sum_hg, breaks = 1000)
+min_hg <- 15
+abline(v = min_hg, col = "red")
+# view(sort(sum_hg))
+
+keep_hg <- sum_hg > min_hg
+mat_hg <- dat$Permissive_hg$Mat_raw[keep_hg, dat$Permissive_hg$Meta$File]
+hist(rowSums(mat_hg), breaks = 1000)
+
+# Mouse 
+
+sum_mm <- rowSums(dat$Permissive_mm$Mat_raw)
+hist(sum_mm, breaks = 1000)
+min_mm <- 120
+abline(v = min_mm, col = "red")
+# view(sort(sum_mm))
+
+keep_mm <- sum_mm > min_mm
+mat_mm <- dat$Permissive_mm$Mat_raw[keep_mm, dat$Permissive_mm$Meta$File]
+hist(rowSums(mat_mm), breaks = 1000)
 
 
-# Example of infreq bound for DHS
-
-pc_dhs_count2 <- mutate(pc_dhs_count,
-                        Raw = Symbol %in% btm_bound_hg1$Symbol,
-                        QNL = Symbol %in% btm_bound_hg2$Symbol)
-
-pc_dhs_count2 %>% head
-boxplot(pc_dhs_count2$Count ~ pc_dhs_count2$Raw)
-boxplot(pc_dhs_count2$Count ~ pc_dhs_count2$QNL)
+# Design matrices, voom, limma model
+# ~ 0 + Symbol + log(N_peaks)
+# Means model (~0) so each TF has a coef corresponding to group mean with no intercept
+#-------------------------------------------------------------------------------
 
 
-# For frequent bound, are peaks dispersed?
+design_mat <- function(meta) {
+  
+  mat <- model.matrix(
+    ~ 0 + Symbol + log(N_peaks), data = meta)
+  
+  rownames(mat) <- meta$File
+  colnames(mat) <- str_replace(colnames(mat), "Symbol", "")
+  
+  return(mat)
+}
 
-pc_sub <- pc_hg[pc_hg$Symbol == "MIDN"]
 
-downstream <- dhs_gr[dhs_gr@seqnames == as.numeric(pc_sub@seqnames) & dhs_gr@ranges < pc_sub@ranges]
-upstream <- dhs_gr[dhs_gr@seqnames == as.numeric(pc_sub@seqnames) & dhs_gr@ranges > pc_sub@ranges]
-downstream$Distance <- distance(pc_sub, downstream)
-upstream$Distance <- distance(pc_sub, upstream)
+design_hg <- design_mat(dat$Permissive_hg$Meta)
+design_mm <- design_mat(dat$Permissive_mm$Meta)
 
 
+# voom data and fit model
+# --
+# voom is a transformation for count matrices with a mean-variance relationship,
+# as seen in the binding matrices. While the bind matrices are not integer
+# counts like in RNA-seq, G. Smyth says it is appropriate to use on numeric
+# matrices https://support.bioconductor.org/p/45695/. 
+#-------------------------------------------------------------------------------
 
+
+get_fit <- function(dat_mat, design_mat) {
+  
+  v <- voom(dat_mat, design = design_mat, normalize.method = "quantile")
+  fit <- lmFit(v, design = design_mat)
+  
+  return(fit)
+}
+
+message("Fitting human model ", Sys.time())
+fit_hg <- get_fit(mat_hg, design_hg)
+
+message("Fitting mouse model ", Sys.time())
+fit_mm <- get_fit(mat_mm, design_mm)
+
+
+# Interested in each TR vs the rest, so must construct the appropriate contrast
+# vectors. This is setting 1 for the TR of interest, and -1/(nTR-1) for the 
+# other nTR-1 TRs, averaging their contributions as the "out" group. Nuisance
+# variables are kept as 0 (the output still corrects for them)
+# Law et al., 2020 used as reference 
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7873980/ 
+#-------------------------------------------------------------------------------
+
+
+contr_list <- function(meta, fit) {
+  
+  tfs <- unique(meta$Symbol)
+  
+  contr_vec <- rep(0, length(colnames(coef(fit))))
+  names(contr_vec) <- colnames(coef(fit))
+  
+  clist <- lapply(tfs, function(x) {
+    contr_vec[x] <- 1
+    contr_vec[names(contr_vec) %in% setdiff(tfs, x)] <- -(1/(length(tfs) - 1))
+    return(contr_vec)
+  })
+  names(clist) <- tfs
+  
+  return(clist)
+}
+
+
+clist_hg <- contr_list(dat$Permissive_hg$Meta, fit_hg)
+clist_mm <- contr_list(dat$Permissive_mm$Meta, fit_mm)
+
+
+# For each symbol, get the model estimates for the symbol vs all contrast
+#-------------------------------------------------------------------------------
+
+# Apply eBayes + contrast fit to the model and extract toptable for each contr
+
+top_fit <- function(contr_list, fit) {
+  lapply(contr_list, function(x) {
+    contr_fit <- eBayes(contrasts.fit(fit, x))
+    topTable(contr_fit, adjust.method = "BH", number = Inf)
+  })
+}
+
+
+message("Top fit human model ", Sys.time())
+top_hg <- top_fit(clist_hg, fit_hg)
+
+message("Top fit mouse model ", Sys.time())
+top_mm <- top_fit(clist_mm, fit_mm)
+
+
+# Save out
+# ------------------------------------------------------------------------------
+
+
+saveRDS(mean_l, bind_summary_path)
+
+
+fit_l <- list(
+  Human_fit = fit_hg,
+  Human_top = top_hg,
+  Mouse_fit = fit_mm,
+  Mouse_top = top_mm
+)
+
+
+saveRDS(fit_l, bind_model_path)
 
 
 # Plots
@@ -215,133 +293,3 @@ plot_hist <- function(mean_df, species, qtl_upper = 0.99) {
 
 p1a <- plot_hist(mean_l$Human_mom, "Human")
 p1b <- plot_hist(mean_l$Mouse_mom, "Mouse")
-
-
-
-##
-
-# limma voom for in vs out
-
-
-# prepare data matrices - min count filter on raw/no-norm score matrix (will be 
-# QN+log in voom). for now currently just from examining distn of row/gene sums
-
-sum_hg <- rowSums(bmat_dedup_hg)
-hist(sum_hg, breaks = 100)
-min_hg <- 50
-abline(v = min_hg, col = "red")
-
-# Subset matrix to only minimum raw counts across experiments
-keep_hg <- sum_hg > min_hg
-mat_hg <- bmat_dedup_hg[keep_hg, meta_final_hg$File]
-
-
-# Design matrices, voom, limma model
-# means model (~0) so each TF has a coef corresponding to group mean with no intercept
-#-------------------------------------------------------------------------------
-
-
-design_hg <- model.matrix(
-  ~ 0 + Symbol + log10(N), 
-  data = meta_final_hg)
-
-rownames(design_hg) <- meta_final_hg$File
-colnames(design_hg) <- str_replace(colnames(design_hg), "Symbol", "")
-
-voom_hg <- voom(mat_hg, 
-                design = design_hg, 
-                normalize.method = "quantile")
-
-fit_hg <- lmFit(voom_hg, design = design_hg)
-
-
-
-# interested in each TR vs the rest, so must iteratively construct the 
-# appropriate contrast vector. (Law et al., 2020) used as reference
-# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7873980/ 
-#-------------------------------------------------------------------------------
-
-
-contr_list <- function(meta, contr_vec) {
-  # Make a contrast vector for each TF vs the rest: 1 for TF of interest, 
-  # -(1/(#TF - 1)) for the rest, leaving nuisance variables as 0
-  
-  tfs <- unique(meta$Symbol)
-  
-  clist <- lapply(tfs, function(x) {
-    contr_vec[x] <- 1
-    contr_vec[names(contr_vec) %in% setdiff(tfs, x)] <- -(1/(length(tfs)-1))
-    return(contr_vec)
-  })
-  names(clist) <- tfs
-  return(clist)
-}
-
-
-contr_hg <- rep(0, length(colnames(coef(fit_hg))))
-names(contr_hg) <- colnames(coef(fit_hg))
-
-clist_hg <- contr_list(meta_final_hg, contr_hg)
-
-
-# For each symbol, get the top results for the symbol vs all contrast
-#-------------------------------------------------------------------------------
-
-
-top_fit <- function(contr_list, fit) {
-  # Apply eBayes + contrast fit to the model and extract toptable for each contr
-  lapply(contr_list, function(x) {
-    contr_fit <- eBayes(contrasts.fit(fit, x))
-    topTable(contr_fit, n = Inf)
-  })
-}
-
-
-top_hg <- top_fit(clist_hg, fit_hg) 
-
-
-
-saveRDS(
-  list(
-    Mat_raw = bmat_dedup_hg,
-    Mat_QNL = qmat_hg,
-    Meta = meta_final_hg,
-    All_mean = all_mean,
-    Group_mean = group_mean,
-    Fit = top_hg
-  ),
-  file = "~/scratch/R_objects/unibind_bindscore_human.RDS"
-)
-
-
-
-
-
-# count of pos FC sig genes at FDR05
-n_hg <- sapply(top_hg, function(x) nrow(filter(x, logFC > 0 & adj.P.Val < 0.05)))
-
-n_df <- data.frame(Count_diff = n_hg) %>% 
-  rownames_to_column(var = "Symbol") %>% 
-  left_join(count(meta_final_hg, Symbol), by = "Symbol")
-
-ggplot(n_df, aes(x =  reorder(Symbol, Count_diff), y = Count_diff)) +
-  geom_bar(stat = "identity") +
-  theme_classic() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 25),
-        axis.text.y = element_text(size = 20),
-        axis.text.x = element_text(size = 5, angle = 90, vjust = 0.5, hjust=1))
-
-
-# head(top_hg$RUNX1)
-# view(top_hg$RUNX1)
-
-# tf <- "RUNX1"
-# gene <- "GTF2A2"
-
-# boxplot(qmat_hg[gene, ] ~ meta_final_hg$Symbol == tf)
-# boxplot(voom_hg$E[gene, ] ~ meta_final_hg$Symbol == tf)
-# 
-# plot(density(qmat_hg[gene, meta_final_hg$Symbol == tf]), col = "red")
-# lines(density(qmat_hg[gene, meta_final_hg$Symbol != tf]), col = "black")
-
