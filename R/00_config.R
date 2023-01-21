@@ -27,6 +27,10 @@ bmat_path_mm <- "/space/scratch/amorin/R_objects/unibind_all_scores_mm.RDS"
 # Processed list of meta and matrices
 bind_dat_path <- "/space/scratch/amorin/R_objects/processed_unibind_data.RSD"
 
+# Average bind scores and output of binding specificity model
+bind_summary_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_summary.RDS"
+bind_model_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_modelfit.RDS"
+
 # Experiments saved as list of GRange objects
 gr_path_perm_hg <- "/space/scratch/amorin/R_objects/unibind_grlist_perm_human.RDS"
 gr_path_rob_hg <- "/space/scratch/amorin/R_objects/unibind_grlist_rob_human.RDS"
