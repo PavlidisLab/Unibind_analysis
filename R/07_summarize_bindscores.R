@@ -7,24 +7,30 @@ library(edgeR)
 source("R/00_config.R")
 source("R/Utils/functions.R")
 
+# Permissive or Robust data collection
+collection <- "Permissive"
+stopifnot(collection %in% c("Robust", "Permissive"))
+
 # Load de-duplicated data
 dat <- readRDS(bind_dat_path)
 
-# Isolating data to use (permissive or robust collection) 
-bind_l <- list(Human = dat$Permissive_hg$Mat_qnl, Mouse = dat$Permissive_mm$Mat_qnl)
-# bind_l <- list(Human = dat$Permissive_hg$Mat_raw, Mouse = dat$Permissive_mm$Mat_raw)
-
-# TODO: consolidate metas across GR/mats
-# meta_l <- list(Human = dat$Permissive_hg$Meta, Mouse = dat$Permissive_mm$Meta)
+# Metadata
 meta_l <- readRDS(meta_outfile)
-meta_hg <- meta_l$Permissive_hg
-meta_mm <- meta_l$Permissive_mm
+
+# Isolating data to use (permissive or robust collection)
+bind_hg <- dat[[paste0(collection, "_hg")]]$Mat_qnl
+bind_mm <- dat[[paste0(collection, "_mm")]]$Mat_qnl
+meta_hg <- dat[[paste0(collection, "_hg")]]$Meta
+meta_mm <- dat[[paste0(collection, "_mm")]]$Meta
 
 # Load protein coding genes and convert to GRanges
 pc_hg <- pc_to_gr(read.delim(ref_hg, stringsAsFactors = FALSE))
 pc_mm <- pc_to_gr(read.delim(ref_mm, stringsAsFactors = FALSE))
 
+bind_summary_path <- paste0("/space/scratch/amorin/R_objects/unibind_", collection, "_bindscore_summary.RDS")
+bind_model_path <- paste0("/space/scratch/amorin/R_objects/unibind_", collection, "_bindscore_modelfit.RDS")
         
+
 # Generate average binding scores across experiments: 1) Across all experiments;
 # 2) Grouped by TF; 3) Mean of means across TFs, to summarize across all 
 # experiments but to reduce effect of imbalanced TF counts.
@@ -60,12 +66,12 @@ get_tf_mean <- function(mat, meta) {
 # Mean summaries into a list
 
 mean_l <- list(
-  Human_all = get_all_mean(bind_l$Human),
-  Human_TF = get_tf_mean(bind_l$Human, dat$Permissive_hg$Meta),
-  Human_mom = get_all_mean(get_tf_mean(bind_l$Human, dat$Permissive_hg$Meta)),
-  Mouse_all = get_all_mean(bind_l$Mouse),
-  Mouse_TF = get_tf_mean(bind_l$Mouse, dat$Permissive_mm$Meta),
-  Mouse_mom = get_all_mean(get_tf_mean(bind_l$Mouse, dat$Permissive_mm$Meta))
+  Human_all = get_all_mean(bind_hg),
+  Human_TF = get_tf_mean(bind_hg, meta_hg),
+  Human_MoM = get_all_mean(get_tf_mean(bind_hg, meta_hg)),
+  Mouse_all = get_all_mean(bind_mm),
+  Mouse_TF = get_tf_mean(bind_mm, meta_mm),
+  Mouse_MoM = get_all_mean(get_tf_mean(bind_mm, meta_mm))
 )
 
 
@@ -86,10 +92,10 @@ filter_top <- function(mean_df, qtl = 0.99) {
 
 
 # Human
-top_bound_hg <- filter_top(mean_l$Human_mom)
+top_bound_hg <- filter_top(mean_l$Human_MoM)
 
 # Mouse
-top_bound_mm <- filter_top(mean_l$Mouse_mom)
+top_bound_mm <- filter_top(mean_l$Mouse_MoM)
 
 
 # Rarely/never bound genes
@@ -102,10 +108,10 @@ filter_bottom <- function(mean_df, qtl = 0.01) {
 
 
 # Human
-top_bound_hg <- filter_bottom(mean_l$Human_mom)
+top_bound_hg <- filter_bottom(mean_l$Human_MoM)
 
 # Mouse
-top_bound_mm <- filter_bottom(mean_l$Mouse_mom)
+top_bound_mm <- filter_bottom(mean_l$Mouse_MoM)
 
 
 # Binding specificity model: Use limma voom framework to get the expected
@@ -121,26 +127,28 @@ top_bound_mm <- filter_bottom(mean_l$Mouse_mom)
 
 # Human
 
-sum_hg <- rowSums(dat$Permissive_hg$Mat_raw)
+mat_raw_hg <- dat[[paste0(collection, "_hg")]]$Mat_raw
+sum_hg <- rowSums(mat_raw_hg)
 hist(sum_hg, breaks = 1000)
 min_hg <- 15
 abline(v = min_hg, col = "red")
 # view(sort(sum_hg))
 
 keep_hg <- sum_hg > min_hg
-mat_hg <- dat$Permissive_hg$Mat_raw[keep_hg, dat$Permissive_hg$Meta$File]
+mat_hg <- mat_raw_hg[keep_hg, meta_hg$File]
 hist(rowSums(mat_hg), breaks = 1000)
 
 # Mouse 
 
-sum_mm <- rowSums(dat$Permissive_mm$Mat_raw)
+mat_raw_mm <- dat[[paste0(collection, "_mm")]]$Mat_raw
+sum_mm <- rowSums(mat_raw_mm)
 hist(sum_mm, breaks = 1000)
 min_mm <- 120
 abline(v = min_mm, col = "red")
 # view(sort(sum_mm))
 
 keep_mm <- sum_mm > min_mm
-mat_mm <- dat$Permissive_mm$Mat_raw[keep_mm, dat$Permissive_mm$Meta$File]
+mat_mm <- mat_raw_mm[keep_mm, meta_mm$File]
 hist(rowSums(mat_mm), breaks = 1000)
 
 
@@ -162,8 +170,8 @@ design_mat <- function(meta) {
 }
 
 
-design_hg <- design_mat(dat$Permissive_hg$Meta)
-design_mm <- design_mat(dat$Permissive_mm$Meta)
+design_hg <- design_mat(meta_hg)
+design_mm <- design_mat(meta_mm)
 
 
 # voom data and fit model
@@ -217,8 +225,8 @@ contr_list <- function(meta, fit) {
 }
 
 
-clist_hg <- contr_list(dat$Permissive_hg$Meta, fit_hg)
-clist_mm <- contr_list(dat$Permissive_mm$Meta, fit_mm)
+clist_hg <- contr_list(meta_hg, fit_hg)
+clist_mm <- contr_list(meta_mm, fit_mm)
 
 
 # For each symbol, get the model estimates for the symbol vs all contrast
@@ -291,5 +299,5 @@ plot_hist <- function(mean_df, species, qtl_upper = 0.99) {
 }
 
 
-p1a <- plot_hist(mean_l$Human_mom, "Human")
-p1b <- plot_hist(mean_l$Mouse_mom, "Mouse")
+p1a <- plot_hist(mean_l$Human_MoM, "Human")
+p1b <- plot_hist(mean_l$Mouse_MoM, "Mouse")

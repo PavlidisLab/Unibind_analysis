@@ -1,4 +1,5 @@
 ## Read in the raw bind score matrices, process them, and save out as a list.
+## TODO: Need to square away discrepancy in meta counts between dat and de-dup'd
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)

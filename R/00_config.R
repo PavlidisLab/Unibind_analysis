@@ -25,11 +25,11 @@ bmat_path_hg <- "/space/scratch/amorin/R_objects/unibind_all_scores_hg.RDS"
 bmat_path_mm <- "/space/scratch/amorin/R_objects/unibind_all_scores_mm.RDS"
 
 # Processed list of meta and matrices
-bind_dat_path <- "/space/scratch/amorin/R_objects/processed_unibind_data.RSD"
+bind_dat_path <- "/space/scratch/amorin/R_objects/processed_unibind_data.RDS"
 
 # Average bind scores and output of binding specificity model
-bind_summary_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_summary.RDS"
-bind_model_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_modelfit.RDS"
+# bind_summary_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_summary.RDS"
+# bind_model_path <- "/space/scratch/amorin/R_objects/unibind_bindscore_modelfit.RDS"
 
 # Experiments saved as list of GRange objects
 gr_path_perm_hg <- "/space/scratch/amorin/R_objects/unibind_grlist_perm_human.RDS"
@@ -45,3 +45,6 @@ bl_path_mm <- paste0(dat_dir, "Chromosome_info/blacklist_hg38.tsv")
 
 # Path of UK biobank depletion ranks
 dr_path <- "/space/scratch/amorin/UK_biobank_depletion_ranks.gz"
+
+# ENCODE DHSs
+dhs_hg_path <- "/space/grp/amorin/Chromosome_info/ENCODE_human_DHS.tsv"
