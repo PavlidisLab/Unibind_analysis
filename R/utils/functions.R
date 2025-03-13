@@ -1,8 +1,7 @@
 ## Functions used throughout analysis
-## TODO: clean and doc
 ## -----------------------------------------------------------------------------
 
-
+library(GenomicRanges)
 
 ## TODO: range table functions -> package
 
