@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 80
----
-
 # Unibind_analysis
 
 This projects downloads mouse and human ChIP-seq data from the Unibind database,
