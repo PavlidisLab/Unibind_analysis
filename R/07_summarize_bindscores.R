@@ -4,8 +4,8 @@
 library(tidyverse)
 library(limma)
 library(edgeR)
+source("R/utils/functions.R")
 source("R/00_config.R")
-source("R/Utils/functions.R")
 
 # Permissive or Robust data collection
 collection <- "Permissive"
@@ -15,7 +15,7 @@ stopifnot(collection %in% c("Robust", "Permissive"))
 dat <- readRDS(bind_dat_path)
 
 # Metadata
-meta_l <- readRDS(meta_outfile)
+meta_l <- readRDS(meta_path)
 
 # Isolating data to use (permissive or robust collection)
 bind_hg <- dat[[paste0(collection, "_hg")]]$Mat_qnl
@@ -24,12 +24,12 @@ meta_hg <- dat[[paste0(collection, "_hg")]]$Meta
 meta_mm <- dat[[paste0(collection, "_mm")]]$Meta
 
 # Load protein coding genes and convert to GRanges
-pc_hg <- pc_to_gr(read.delim(ref_hg, stringsAsFactors = FALSE))
-pc_mm <- pc_to_gr(read.delim(ref_mm, stringsAsFactors = FALSE))
+pc_hg <- pc_to_gr(read.delim(ref_path_hg, stringsAsFactors = FALSE))
+pc_mm <- pc_to_gr(read.delim(ref_path_mm, stringsAsFactors = FALSE))
 
-bind_summary_path <- paste0("/space/scratch/amorin/R_objects/unibind_", collection, "_bindscore_summary.RDS")
-bind_model_path <- paste0("/space/scratch/amorin/R_objects/unibind_", collection, "_bindscore_modelfit.RDS")
-        
+bind_summary_path <- file.path(dat_dir, paste0("unibind_", collection, "_bindscore_summary.RDS"))
+bind_model_path <- file.path(dat_dir, paste0("unibind_", collection, "_bindscore_modelfit.RDS"))
+
 
 # Generate average binding scores across experiments: 1) Across all experiments;
 # 2) Grouped by TF; 3) Mean of means across TFs, to summarize across all 
@@ -37,14 +37,16 @@ bind_model_path <- paste0("/space/scratch/amorin/R_objects/unibind_", collection
 # ------------------------------------------------------------------------------
 
 
-# Return a df of the average bind score per gene across all experiments
+# Return a df of the average bind score per gene across all experiments. This
+# will be influenced by TFs that have more data
 
 get_all_mean <- function(mat) {
   data.frame(Symbol = rownames(mat), Mean = rowMeans(mat))
 }
 
 
-# Return a gene by TF matrix of the average binding scores
+# Return a gene by TF matrix of the average binding scores for each TF's set 
+# of experiments.
 
 get_tf_mean <- function(mat, meta) {
   
@@ -52,7 +54,7 @@ get_tf_mean <- function(mat, meta) {
   
   mean_l <- lapply(unique(tfs), function(x) {
     meta <- filter(meta, Symbol == x)
-    rowMeans(mat[, meta$File, drop = FALSE])
+    rowMeans(mat[, meta$ID, drop = FALSE])
   })
   
   mean_mat <- as.matrix(do.call(cbind, mean_l))
@@ -63,7 +65,8 @@ get_tf_mean <- function(mat, meta) {
 }
 
 
-# Mean summaries into a list
+# Mean summaries into a list: include a groupwise average that gives each
+# TF equal weight to the global average, regardless of its number of experiments
 
 mean_l <- list(
   Human_all = get_all_mean(bind_hg),
@@ -73,12 +76,6 @@ mean_l <- list(
   Mouse_TF = get_tf_mean(bind_mm, meta_mm),
   Mouse_MoM = get_all_mean(get_tf_mean(bind_mm, meta_mm))
 )
-
-
-# plot(mean_l$Human_all$Mean, mean_l$Human_mom$Mean)
-# cor(mean_l$Human_all$Mean, mean_l$Human_mom$Mean)
-# plot(mean_l$Mouse_all$Mean, mean_l$Mouse_mom$Mean)
-# cor(mean_l$Mouse_all$Mean, mean_l$Mouse_mom$Mean)
 
 
 # Top bound genes, using mean of means.
@@ -108,10 +105,10 @@ filter_bottom <- function(mean_df, qtl = 0.01) {
 
 
 # Human
-top_bound_hg <- filter_bottom(mean_l$Human_MoM)
+btm_bound_hg <- filter_bottom(mean_l$Human_MoM)
 
 # Mouse
-top_bound_mm <- filter_bottom(mean_l$Mouse_MoM)
+btm_bound_mm <- filter_bottom(mean_l$Mouse_MoM)
 
 
 # Binding specificity model: Use limma voom framework to get the expected
@@ -129,27 +126,27 @@ top_bound_mm <- filter_bottom(mean_l$Mouse_MoM)
 
 mat_raw_hg <- dat[[paste0(collection, "_hg")]]$Mat_raw
 sum_hg <- rowSums(mat_raw_hg)
-hist(sum_hg, breaks = 1000)
+# hist(sum_hg, breaks = 1000)
 min_hg <- 15
-abline(v = min_hg, col = "red")
+# abline(v = min_hg, col = "red")
 # view(sort(sum_hg))
 
 keep_hg <- sum_hg > min_hg
-mat_hg <- mat_raw_hg[keep_hg, meta_hg$File]
-hist(rowSums(mat_hg), breaks = 1000)
+mat_hg <- mat_raw_hg[keep_hg, meta_hg$ID]
+# hist(rowSums(mat_hg), breaks = 1000)
 
 # Mouse 
 
 mat_raw_mm <- dat[[paste0(collection, "_mm")]]$Mat_raw
 sum_mm <- rowSums(mat_raw_mm)
-hist(sum_mm, breaks = 1000)
+# hist(sum_mm, breaks = 1000)
 min_mm <- 120
-abline(v = min_mm, col = "red")
+# abline(v = min_mm, col = "red")
 # view(sort(sum_mm))
 
 keep_mm <- sum_mm > min_mm
-mat_mm <- mat_raw_mm[keep_mm, meta_mm$File]
-hist(rowSums(mat_mm), breaks = 1000)
+mat_mm <- mat_raw_mm[keep_mm, meta_mm$ID]
+# hist(rowSums(mat_mm), breaks = 1000)
 
 
 # Design matrices, voom, limma model
@@ -163,7 +160,7 @@ design_mat <- function(meta) {
   mat <- model.matrix(
     ~ 0 + Symbol + log(N_peaks), data = meta)
   
-  rownames(mat) <- meta$File
+  rownames(mat) <- meta$ID
   colnames(mat) <- str_replace(colnames(mat), "Symbol", "")
   
   return(mat)
