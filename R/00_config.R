@@ -7,7 +7,7 @@
 peak_dir <- "/space/grp/amorin/Peak_files/Unibind"
 
 # This is the root dir where processed output data was dumped
-dat_dir <- "/space/scratch/amorin/R_objects"
+dat_dir <- "/space/scratch/amorin/Unibind"
 
 # This is the root dir where chromosome data like blacklists are stored
 chrom_dir <- "/space/grp/amorin/Chromosome_info"
@@ -32,12 +32,8 @@ bmat_path_hg <- file.path(dat_dir, "unibind_all_scores_hg.RDS")
 bmat_path_mm <- file.path(dat_dir, "unibind_all_scores_mm.RDS")
 
 # List of processed matrices and metadata
-bind_dat_path <- file.path(dat_dir, "processed_unibind_data.RDS")
+bind_dat_path <- file.path(dat_dir, "unibind_processed_data.RDS")
 meta_path <- file.path(dat_dir, "unibind_metadata.RDS")
-
-# Average bind scores and output of binding specificity model
-bind_summary_path <- file.path(dat_dir, "unibind_bindscore_summary.RDS")
-bind_model_path <- file.path("unibind_bindscore_modelfit.RDS")
 
 # Experiments saved as list of GRange objects
 gr_perm_path_hg <- file.path(dat_dir, "unibind_grlist_perm_human.RDS")
@@ -52,4 +48,3 @@ ref_path_mm <- file.path(meta_dir, "refseq_select_mm10_jan2024.tsv")
 # ENCODE black lists, used to filter peaks in blacklisted regions
 bl_path_hg <-  file.path(chrom_dir, "blacklist_hg38.tsv")
 bl_path_mm <- file.path(chrom_dir, "blacklist_mm10.tsv")
-
