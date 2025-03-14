@@ -4,7 +4,7 @@
 
 library(tidyverse)
 library(parallel)
-source("R/Utils/functions.R")
+source("R/utils/functions.R")
 source("R/00_config.R")
 
 
@@ -15,7 +15,7 @@ source("R/00_config.R")
 # ------------------------------------------------------------------------------
 
 
-meta_df <- function(path) {
+create_meta_df <- function(path) {
   
   tfs <- list.files(path)
   
@@ -36,10 +36,10 @@ meta_df <- function(path) {
 
 
 meta_l <- list(
-  Permissive_hg = meta_df(perm_path_hg),
-  Robust_hg = meta_df(rob_path_hg),
-  Permissive_mm = meta_df(perm_path_mm),
-  Robust_mm = meta_df(rob_path_mm)
+  Permissive_hg = create_meta_df(perm_path_hg),
+  Robust_hg = create_meta_df(rob_path_hg),
+  Permissive_mm = create_meta_df(perm_path_mm),
+  Robust_mm = create_meta_df(rob_path_mm)
 )
 
 
@@ -131,4 +131,4 @@ perm_only_mm <- filter(diff_mm, is.na(nRobust))
 # Save out
 # ------------------------------------------------------------------------------
 
-saveRDS(meta_l, meta_outfile)
+saveRDS(meta_l, meta_path)

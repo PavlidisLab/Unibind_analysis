@@ -7,13 +7,13 @@
 peak_dir <- "/space/grp/amorin/Peak_files/Unibind"
 
 # This is the root dir where processed output data was dumped
-dat_dir <- "/space/scratch/amorin/R_objects/"
+dat_dir <- "/space/scratch/amorin/R_objects"
 
 # This is the root dir where chromosome data like blacklists are stored
-chrom_dir <- "/space/grp/amorin/Chromosome_info/"
+chrom_dir <- "/space/grp/amorin/Chromosome_info"
 
 # This is the root dir where information like protein coding tables are stored
-meta_dir <- "/space/grp/amorin/Metadata/"
+meta_dir <- "/space/grp/amorin/Metadata"
 
 # For use in parallel
 cores <- 8
