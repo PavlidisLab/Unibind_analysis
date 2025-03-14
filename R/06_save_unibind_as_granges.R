@@ -3,7 +3,7 @@
 
 library(tidyverse)
 library(GenomicRanges)
-source("R/Utils/functions.R")
+source("R/utils/functions.R")
 source("R/00_config.R")
 
 # ENCODE blacklisted regions to be filtered
@@ -11,7 +11,7 @@ bl_hg <- bl_to_gr(read.delim(bl_path_hg, stringsAsFactors = FALSE))
 bl_mm <- bl_to_gr(read.delim(bl_path_mm, stringsAsFactors = FALSE))
 
 # Meta data of experiments to be loaded
-meta_l <- readRDS(meta_outfile)
+meta_l <- readRDS(meta_path)
 
 
 # Load each experiment of the input/meta df into a list of GR objects
@@ -22,17 +22,13 @@ load_gr <- function(dir, input_df, bl_gr) {
   
   gr_l <- lapply(1:nrow(input_df), function(x) {
     
+    message(paste(input_df$File[x], Sys.time()))
     path <- file.path(dir, input_df$Symbol[x], input_df$File[x])
     
     tryCatch({
       
-      peak_gr <- load_unibind(path) %>% 
-        unibind_to_gr(bl_gr)
-      
-      message(input_df$File[x], " complete ", Sys.time())
-      
-      return(peak_gr)
-      
+      gr <- load_unibind(path) %>% unibind_to_gr(bl_gr)
+
     }, error = function(e) NULL)
     
   })
@@ -63,7 +59,7 @@ gr_rob_mm <- gr_perm_mm[intersect(meta_l$Robust_mm$File, meta_l$Permissive_mm$Fi
 # ------------------------------------------------------------------------------
 
 
-saveRDS(gr_perm_hg, file = gr_path_perm_hg)
-saveRDS(gr_rob_hg, file = gr_path_rob_hg)
-saveRDS(gr_perm_mm, file = gr_path_perm_mm)
-saveRDS(gr_rob_mm, file = gr_path_rob_mm)
+saveRDS(gr_perm_hg, file = gr_perm_path_hg)
+saveRDS(gr_rob_hg, file = gr_rob_path_hg)
+saveRDS(gr_perm_mm, file = gr_perm_path_mm)
+saveRDS(gr_rob_mm, file = gr_rob_path_mm)
