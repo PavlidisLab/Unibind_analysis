@@ -2,10 +2,7 @@
 ## -----------------------------------------------------------------------------
 
 library(GenomicRanges)
-
-## TODO: range table functions -> package
-
-# source("/home/amorin/Projects/TR_aggregation/R/utils/range_table_functions.R")
+library(tidyverse)
 
 
 # Read unibind experiment (peak table) as a data frame
@@ -24,7 +21,6 @@ load_unibind <- function(path) {
 
 
 
-
 # remove 'chr' prefix of chromosome identifiers, coerce mitochondrial to 
 # 'MT' and only keep standard autosomal and sex chromosomes
 
@@ -37,7 +33,6 @@ get_standard_chr <- function(range_table) {
   range_table <- filter(range_table, Chromosome %in% c(1:22, "MT", "X", "Y"))
   return(range_table)
 }
-
 
 
 
@@ -85,7 +80,6 @@ strand_to_plusminus <- function(range_table) {
   range_table$Strand <- str_replace(as.character(range_table$Strand), "^-1$", "-")
   return(range_table)
 }
-
 
 
 
