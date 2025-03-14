@@ -15,6 +15,10 @@ source("R/00_config.R")
 # ------------------------------------------------------------------------------
 
 
+# NOTE: The "File" column is really the unique identifier (includes info on
+# which motif was scored), but given that I de-duplicate/average the 
+# experiments, I use the ID column to refer to the individual unique experiments.
+
 create_meta_df <- function(path) {
   
   tfs <- list.files(path)
