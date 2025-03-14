@@ -1,14 +1,16 @@
 ## Read in the raw bind score matrices, process them, and save out as a list.
-## TODO: Need to square away discrepancy in meta counts between dat and de-dup'd
+## In retrospect, this script is an awkward combo of core processing and 
+## inference. Oh well.
 ## -----------------------------------------------------------------------------
 
 library(tidyverse)
 library(preprocessCore)
 library(parallel)
+source("R/utils/functions.R")
 source("R/00_config.R")
 
 # Load Unibind metadata and only consider experiments with a min count of peaks
-meta_l <- readRDS(meta_outfile)
+meta_l <- readRDS(meta_path)
 meta_l <- lapply(meta_l, filter, N_peaks >= min_peaks)
 
 # Loading of matrices of raw scores
@@ -103,49 +105,71 @@ cor_max <- lapply(summ_l, filter, Median == max(Median))
 # ------------------------------------------------------------------------------
 
 
-# Return a matrix where the duplicated experiments are averaged
+# Return a matrix where the duplicated experiments are averaged. Coerce the 
+# column names to the experiment ID, rather than the file.
 
 avg_dup <- function(meta_df, bmat) {
   
   stopifnot(all(colnames(bmat) %in% meta_df$File))
+  ids <- unique(meta_df$ID)
   
-  dup_avg <- lapply(unique(meta_df$ID), function(x) {
+  dup_avg <- lapply(ids, function(x) {
     cols <- filter(meta_df, ID == x)
     bmat <- bmat[, cols$File]
     rowMeans(bmat)
   })
   
   dup_avg <- do.call(cbind, dup_avg)
+  colnames(dup_avg) <- ids
+  
   return(dup_avg)
 }
 
 
-# Return a df where the duplicated experiment info has been collapsed
+# Return meta where Files for duplicated experiments are cat'd and N_peaks avg'd
 
 dedup_meta <- function(meta_df) {
   
-  meta_df <- meta_df %>% 
-    mutate(File = str_replace(File, "\\.MA.*", "\\.avg")) %>% 
-    distinct(File, .keep_all = TRUE)
+  dedup_meta_df <- meta_df %>% 
+    group_by(ID) %>% 
+    dplyr::summarise(
+      Symbol = dplyr::first(Symbol),
+      File = paste(File, collapse = ";"),
+      ID = dplyr::first(ID),
+      Duplicate = dplyr::first(Duplicate),
+      N_peaks = floor(mean(N_peaks))) %>% 
+    ungroup() %>% 
+    arrange(match(ID, meta_df$ID))
   
-  return(meta_df)
+  return(dedup_meta_df)
 }
 
 
-# Return a list of the de-duplicated meta and matrix
+
+# Return a list of the de-duplicated meta and matrix, where column/experiments
+# are IDs, rather than the full file
 
 dedup_data <- function(dup_meta, nodup_meta, dup_mat, nodup_mat) {
   
+  stopifnot(identical(colnames(nodup_mat), nodup_meta$File))
+  stopifnot(identical(colnames(dup_mat), dup_meta$File))
+  
   avg_dup_mat <- avg_dup(dup_meta, dup_mat)
   avg_dup_meta <- dedup_meta(dup_meta)
-  colnames(avg_dup_mat) <- avg_dup_meta$File
-  final_meta <- rbind(nodup_meta, avg_dup_meta) %>% arrange(Symbol)
-  final_mat <- cbind(nodup_mat, avg_dup_mat)[, final_meta$File]
   
-  return(list(Meta = final_meta, Mat_raw = final_mat))
+  stopifnot(identical(colnames(avg_dup_mat), avg_dup_meta$ID))
+  final_meta <- rbind(nodup_meta, avg_dup_meta) %>% arrange(Symbol)
+  
+  colnames(nodup_mat) <- nodup_meta$ID
+  final_mat <- cbind(nodup_mat, avg_dup_mat)[, final_meta$ID]
+  
+  return(list(Meta = final_meta, 
+              Mat_raw = final_mat))
   
 }
 
+
+# De-duplicating over mouse and human, robust and permissive
 
 dedup_l <- mclapply(names(bmat_l), function(x) {
   
@@ -154,13 +178,13 @@ dedup_l <- mclapply(names(bmat_l), function(x) {
              dup_mat = bmat_l[[x]][,  meta_dup_l[[x]]$File],
              nodup_mat = bmat_l[[x]][, meta_nodup_l[[x]]$File])
   
-}, mc.cores = 4)
+}, mc.cores = cores)
 names(dedup_l) <- names(bmat_l)
 
 
 
 stopifnot(identical(
-  dedup_l$Permissive_hg$Mat[, "EXP036852.renal_tubular_cells.ARNT.avg"],
+  dedup_l$Permissive_hg$Mat_raw[, "EXP036852_renal_tubular_cells_ARNT"],
   rowMeans(bmat_hg[, c("EXP036852.renal_tubular_cells.ARNT.MA0004.1.damo.bed",
                        "EXP036852.renal_tubular_cells.ARNT.MA0006.1.damo.bed",
                        "EXP036852.renal_tubular_cells.ARNT.MA0259.1.damo.bed")])
