@@ -5,13 +5,13 @@
 
 library(tidyverse)
 library(parallel)
+source("R/utils/functions.R")
 source("R/00_config.R")
-source("R/Utils/functions.R")
 
 # Load metadata, protein coding genes, and ENCODE blacklisted regions
-pc <- read.delim(ref_mm, stringsAsFactors = FALSE)
+pc <- read.delim(ref_path_mm, stringsAsFactors = FALSE)
 bl <- read.delim(bl_path_mm, stringsAsFactors = FALSE)
-meta_l <- readRDS(meta_outfile)
+meta_l <- readRDS(meta_path)
 
 # Convert range tables to GR objects for scoring
 bl_gr <- bl_to_gr(bl)
@@ -30,17 +30,13 @@ meta <- filter(meta_l$Permissive_mm, N_peaks >= min_peaks)
 
 if (!file.exists(bmat_path_mm)) {
   
-  bscore_l <- load_and_score(
+  bscore_mat <- load_and_score(
     dir = perm_path_mm,
     input_df = meta,
     bl_gr = bl_gr,
     pc_gr = pc_gr,
     ncores = cores
   )
-  
-  names(bscore_l) <- meta$File
-  
-  bscore_mat <- do.call(cbind, bscore_l)
   
   saveRDS(bscore_mat, file = bmat_path_mm)
   
